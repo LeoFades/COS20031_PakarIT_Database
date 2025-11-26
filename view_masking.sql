@@ -34,3 +34,56 @@ SELECT
 FROM Admin a
 JOIN Doctor d ON a.AdminId = d.AdminId
 LEFT JOIN Patient p ON d.DoctorId = p.DoctorId;
+
+-- ==========================================
+-- ALERT MONITORING VIEW
+-- ==========================================
+
+CREATE VIEW AlertDashboard AS
+SELECT 
+    'Compliance' AS AlertType,
+    p.PatientId,
+    p.Name AS PatientName,
+    p.ComplianceStatus AS Status,
+    p.LastComplianceCheck AS LastChecked,
+    CONCAT('Compliance Rate: ', p.ComplianceStatus) AS Details,
+    d.Name AS AssignedDoctor
+FROM Patient p
+LEFT JOIN Doctor d ON p.DoctorId = d.DoctorId
+WHERE p.ComplianceStatus IN ('Warning', 'Critical')
+
+UNION ALL
+
+SELECT 
+    'Side Effect' AS AlertType,
+    pse.PatientId,
+    p.Name AS PatientName,
+    sl.SeverityName AS Status,
+    pse.RecordedAt AS LastChecked,
+    CONCAT('Side Effect: ', se.Name, ' - Requires Review') AS Details,
+    d.Name AS AssignedDoctor
+FROM PatientSideEffect pse
+JOIN Patient p ON pse.PatientId = p.PatientId
+LEFT JOIN Doctor d ON p.DoctorId = d.DoctorId
+JOIN SideEffect se ON pse.SideEffectId = se.SideEffectId
+JOIN SeverityLevel sl ON pse.SeverityId = sl.SeverityId
+WHERE pse.RequiresDoctorReview = TRUE
+AND pse.ReviewedAt IS NULL
+
+UNION ALL
+
+SELECT 
+    'Unresolved Side Effect' AS AlertType,
+    pse.PatientId,
+    p.Name AS PatientName,
+    'Critical' AS Status,
+    pse.OnsetDate AS LastChecked,
+    CONCAT('Severe side effect unresolved for ', DATEDIFF(NOW(), pse.OnsetDate), ' days') AS Details,
+    d.Name AS AssignedDoctor
+FROM PatientSideEffect pse
+JOIN Patient p ON pse.PatientId = p.PatientId
+LEFT JOIN Doctor d ON p.DoctorId = d.DoctorId
+JOIN SeverityLevel sl ON pse.SeverityId = sl.SeverityId
+WHERE sl.SeverityCode = 'severe'
+AND pse.ResolutionDate IS NULL
+AND DATEDIFF(NOW(), pse.OnsetDate) >= 7;

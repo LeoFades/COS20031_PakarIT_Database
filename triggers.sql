@@ -176,4 +176,165 @@ BEGIN
     );
 END$$
 
+-- ==========================================
+-- AUTOMATIC THRESHOLD CHECK TRIGGERS
+-- ==========================================
+
+-- TRIGGER 1: Auto-flag severe side effects for doctor review
+CREATE TRIGGER trg_auto_flag_severe_sideeffect
+BEFORE INSERT ON PatientSideEffect
+FOR EACH ROW
+BEGIN
+    DECLARE v_severity_code VARCHAR(10);
+    
+    -- Get severity code
+    SELECT SeverityCode INTO v_severity_code 
+    FROM SeverityLevel 
+    WHERE SeverityId = NEW.SeverityId;
+    
+    -- If severe, automatically flag for doctor review
+    IF v_severity_code = 'severe' THEN
+        SET NEW.RequiresDoctorReview = TRUE;
+    END IF;
+END$$
+
+CREATE TRIGGER trg_auto_flag_severe_sideeffect_update
+BEFORE UPDATE ON PatientSideEffect
+FOR EACH ROW
+BEGIN
+    DECLARE v_severity_code VARCHAR(10);
+    
+    -- Get severity code
+    SELECT SeverityCode INTO v_severity_code 
+    FROM SeverityLevel 
+    WHERE SeverityId = NEW.SeverityId;
+    
+    -- If severity increased to severe, flag for review
+    IF v_severity_code = 'severe' AND OLD.RequiresDoctorReview = FALSE THEN
+        SET NEW.RequiresDoctorReview = TRUE;
+    END IF;
+END$$
+
+-- TRIGGER 2: Auto-update prescription status based on dates
+CREATE TRIGGER trg_auto_update_prescription_status
+BEFORE UPDATE ON PrescriptionMedication
+FOR EACH ROW
+BEGIN
+    -- If end date has passed, mark as Completed
+    IF NEW.EndDate IS NOT NULL AND NEW.EndDate <= CURDATE() AND OLD.Status != 'Completed' THEN
+        SET NEW.Status = 'Completed';
+    END IF;
+END$$
+
+-- TRIGGER 3: Monitor patient compliance rate
+CREATE TRIGGER trg_auto_check_patient_compliance
+AFTER INSERT ON Compliance
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_id INT;
+    DECLARE v_total_doses INT;
+    DECLARE v_missed_doses INT;
+    DECLARE v_compliance_rate DECIMAL(5,2);
+    
+    -- Get patient ID from reminder
+    SELECT PatientId INTO v_patient_id
+    FROM Reminder
+    WHERE ReminderId = NEW.ReminderId;
+    
+    -- Calculate compliance for last 30 days
+    SELECT 
+        COUNT(*) INTO v_total_doses
+    FROM Compliance c
+    JOIN Reminder r ON c.ReminderId = r.ReminderId
+    WHERE r.PatientId = v_patient_id
+    AND c.TakenAt >= DATE_SUB(NOW(), INTERVAL 30 DAY);
+    
+    -- Count missed doses
+    SELECT 
+        COUNT(*) INTO v_missed_doses
+    FROM Compliance c
+    JOIN Reminder r ON c.ReminderId = r.ReminderId
+    WHERE r.PatientId = v_patient_id
+    AND c.Status IN ('Missed', 'Skipped')
+    AND c.TakenAt >= DATE_SUB(NOW(), INTERVAL 30 DAY);
+    
+    -- Calculate compliance rate
+    IF v_total_doses > 0 THEN
+        SET v_compliance_rate = ((v_total_doses - v_missed_doses) / v_total_doses) * 100;
+        
+        -- Update patient status based on threshold
+        -- Critical: < 50%, Warning: < 80%, Good: >= 80%
+        IF v_compliance_rate < 50 THEN
+            UPDATE Patient 
+            SET ComplianceStatus = 'Critical',
+                LastComplianceCheck = NOW()
+            WHERE PatientId = v_patient_id;
+        ELSEIF v_compliance_rate < 80 THEN
+            UPDATE Patient 
+            SET ComplianceStatus = 'Warning',
+                LastComplianceCheck = NOW()
+            WHERE PatientId = v_patient_id;
+        ELSE
+            UPDATE Patient 
+            SET ComplianceStatus = 'Good',
+                LastComplianceCheck = NOW()
+            WHERE PatientId = v_patient_id;
+        END IF;
+    END IF;
+END$$
+
+-- TRIGGER 4: Alert if patient has multiple severe side effects
+CREATE TRIGGER trg_auto_check_multiple_sideeffects
+AFTER INSERT ON PatientSideEffect
+FOR EACH ROW
+BEGIN
+    DECLARE v_severe_count INT;
+    
+    -- Count severe side effects in last 7 days
+    SELECT COUNT(*) INTO v_severe_count
+    FROM PatientSideEffect pse
+    JOIN SeverityLevel sl ON pse.SeverityId = sl.SeverityId
+    WHERE pse.PatientId = NEW.PatientId
+    AND sl.SeverityCode = 'severe'
+    AND pse.RecordedAt >= DATE_SUB(NOW(), INTERVAL 7 DAY);
+    
+    -- If 2 or more severe side effects, flag all for review
+    IF v_severe_count >= 2 THEN
+        UPDATE PatientSideEffect
+        SET RequiresDoctorReview = TRUE
+        WHERE PatientId = NEW.PatientId
+        AND RecordedAt >= DATE_SUB(NOW(), INTERVAL 7 DAY);
+    END IF;
+END$$
+
+-- TRIGGER 5: Check unresolved severe side effects (7+ days)
+CREATE TRIGGER trg_auto_check_unresolved_sideeffect
+AFTER UPDATE ON PatientSideEffect
+FOR EACH ROW
+BEGIN
+    DECLARE v_severity_code VARCHAR(10);
+    DECLARE v_days_since_onset INT;
+    
+    -- Get severity code
+    SELECT SeverityCode INTO v_severity_code 
+    FROM SeverityLevel 
+    WHERE SeverityId = NEW.SeverityId;
+    
+    -- Calculate days since onset
+    SET v_days_since_onset = DATEDIFF(NOW(), NEW.OnsetDate);
+    
+    -- If severe side effect unresolved for 7+ days, log alert
+    IF v_severity_code = 'severe' 
+       AND NEW.ResolutionDate IS NULL 
+       AND v_days_since_onset >= 7 THEN
+        
+        -- Add audit log entry for doctor attention
+        INSERT INTO AuditLog(TableName, Action, RowPrimaryKey, NewData, Notes)
+        VALUES('PatientSideEffect', 'UPDATE', 
+               CONCAT('PatientSideEffectId=', NEW.PatientSideEffectId),
+               JSON_OBJECT('PatientId', NEW.PatientId, 'PressMedId', NEW.PressMedId),
+               'ALERT: Severe side effect unresolved for 7+ days - medication review recommended');
+    END IF;
+END$$
+
 DELIMITER ;

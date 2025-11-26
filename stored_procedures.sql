@@ -671,8 +671,3 @@ END$$
 
 DELIMITER ;
 
--- ==========================================
--- TEST MESSAGE
--- ==========================================
-SELECT 'Comprehensive input sanitization procedures created successfully!' AS Status;
-SELECT 'All major operations now have full validation and sanitization' AS Info;

@@ -9,6 +9,7 @@ USE PakarIT;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Drop views
+DROP VIEW IF EXISTS AlertDashboard;
 DROP VIEW IF EXISTS PatientPublic;
 DROP VIEW IF EXISTS DoctorPublic;
 DROP VIEW IF EXISTS SystemOverview;
@@ -111,7 +112,7 @@ CREATE TABLE Doctor (
     CONSTRAINT chk_doctor_name_not_empty CHECK (LENGTH(TRIM(Name)) > 0)
 );
 
--- 4) Patient table (simplified with ENUM for gender)
+-- 4) Patient table (simplified with ENUM for gender + automatic monitoring)
 CREATE TABLE Patient (
     PatientId INT PRIMARY KEY AUTO_INCREMENT,
     Name VARCHAR(100) NOT NULL,
@@ -124,6 +125,9 @@ CREATE TABLE Patient (
     EmergencyContactEncrypted VARBINARY(255),
     -- Data integrity
     DataHash VARBINARY(64),
+    -- Automatic compliance monitoring
+    ComplianceStatus ENUM('Good','Warning','Critical') DEFAULT 'Good',
+    LastComplianceCheck DATETIME NULL,
     DoctorId INT NULL,
     IsActive BOOLEAN DEFAULT TRUE,
     CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -243,12 +247,17 @@ CREATE TABLE PatientSideEffect (
     OnsetDate DATE,
     ResolutionDate DATE NULL,
     ActionTakenId INT NULL,
+    -- Automatic alert fields
+    RequiresDoctorReview BOOLEAN DEFAULT FALSE,
+    ReviewedAt DATETIME NULL,
+    ReviewedBy INT NULL,
     Notes TEXT,
     FOREIGN KEY (PatientId) REFERENCES Patient(PatientId) ON DELETE CASCADE,
     FOREIGN KEY (SideEffectId) REFERENCES SideEffect(SideEffectId) ON DELETE CASCADE,
     FOREIGN KEY (PressMedId) REFERENCES PrescriptionMedication(PressMedId) ON DELETE CASCADE,
     FOREIGN KEY (SeverityId) REFERENCES SeverityLevel(SeverityId),
     FOREIGN KEY (ActionTakenId) REFERENCES SideEffectAction(ActionId),
+    FOREIGN KEY (ReviewedBy) REFERENCES Doctor(DoctorId) ON DELETE SET NULL,
     CONSTRAINT chk_sideeffect_dates CHECK (OnsetDate IS NULL OR ResolutionDate IS NULL OR OnsetDate <= ResolutionDate)
 );
 
@@ -289,11 +298,3 @@ CREATE TABLE AuditLog (
     Notes TEXT NULL,
     FOREIGN KEY (AppUserId) REFERENCES AppUser(AppUserId) ON DELETE SET NULL
 );
-
-
-
-
-
-
-
-

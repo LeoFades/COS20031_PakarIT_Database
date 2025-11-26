@@ -123,4 +123,41 @@ BEGIN
     END WHILE;
 END$$
 
+-- ==========================================
+-- SECURITY PROCEDURES (Failed Login Tracking)
+-- ==========================================
+
+CREATE PROCEDURE sp_failed_login(
+    IN p_username VARCHAR(100),
+    IN p_max_attempts INT,
+    IN p_lock_minutes INT
+)
+BEGIN
+    -- Increment failed attempts
+    UPDATE AppUser
+    SET FailedAttempts = FailedAttempts + 1
+    WHERE Username = p_username;
+
+    -- Lock account if max attempts reached
+    IF (SELECT FailedAttempts FROM AppUser WHERE Username = p_username) >= p_max_attempts THEN
+        UPDATE AppUser
+        SET IsLocked = TRUE,
+            LockedUntil = DATE_ADD(NOW(), INTERVAL p_lock_minutes MINUTE)
+        WHERE Username = p_username;
+    END IF;
+END$$
+
+CREATE PROCEDURE sp_successful_login(
+    IN p_username VARCHAR(100)
+)
+BEGIN
+    -- Reset failed attempts and update last login
+    UPDATE AppUser
+    SET FailedAttempts = 0,
+        IsLocked = FALSE,
+        LockedUntil = NULL,
+        LastLogin = NOW()
+    WHERE Username = p_username;
+END$$
+
 DELIMITER ;

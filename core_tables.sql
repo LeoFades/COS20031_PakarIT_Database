@@ -133,7 +133,7 @@ CREATE TABLE Patient (
     CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_patient_doctor FOREIGN KEY (DoctorId) REFERENCES Doctor(DoctorId) ON DELETE SET NULL,
     CONSTRAINT chk_patient_name_not_empty CHECK (LENGTH(TRIM(Name)) > 0),
-    CONSTRAINT chk_patient_dob_reasonable CHECK (DateOfBirth BETWEEN '1900-01-01' AND CURDATE())
+    CONSTRAINT chk_patient_dob_reasonable CHECK (DateOfBirth BETWEEN '1900-01-01' AND '2100-12-31')
 );
 
 -- 5) Medication tables

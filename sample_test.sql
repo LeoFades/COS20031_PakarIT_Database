@@ -21,8 +21,8 @@ INSERT INTO Doctor (Name, Specialization, ContactInfoEncrypted, AppUserId, Admin
  (SELECT AppUserId FROM AppUser WHERE Username = 'drbob'), 1);
 
 -- Create sample patient using secure procedure
-CALL sp_create_secure_patient('John Doe', '1985-06-15', 'Male', '123-456-7890', 'john@email.com', 1);
-CALL sp_create_secure_patient('Jane Smith', '1990-08-22', 'Female', '123-456-7891', 'jane@email.com', 2);
+CALL sp_create_secure_patient('John Doe', '1985-06-15', 'Male', '123-456-7890', 'john@email.com', '123 Main St', '987-654-3210', 1);
+CALL sp_create_secure_patient('Jane Smith', '1990-08-22', 'Female', '123-456-7891', 'jane@email.com', '456 Oak Ave', '987-654-3211', 2);
 
 -- Create sample medications
 INSERT INTO Medication (Name, DosageForm, Strength, Instructions) VALUES
